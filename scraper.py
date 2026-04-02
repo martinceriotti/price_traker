@@ -26,14 +26,50 @@ EMAIL_TO       = os.environ["EMAIL_TO"]          # destinatario (puede ser el mi
 async def get_price() -> float | None:
     """Abre la página con Playwright y extrae el precio."""
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+        browser = await p.chromium.launch(
+            headless=True,
+            args=[
+                "--no-sandbox",
+                "--disable-blink-features=AutomationControlled",
+                "--disable-infobars",
+                "--window-size=1920,1080",
+            ],
+        )
 
-        await page.goto(URL, wait_until="networkidle", timeout=60000)
+        # Contexto que simula un navegador real
+        context = await browser.new_context(
+            viewport={"width": 1920, "height": 1080},
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            locale="es-AR",
+            timezone_id="America/Argentina/Buenos_Aires",
+            extra_http_headers={
+                "Accept-Language": "es-AR,es;q=0.9,en;q=0.8",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            },
+        )
+
+        # Ocultamos que es Playwright
+        await context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3] });
+            window.chrome = { runtime: {} };
+        """)
+
+        page = await context.new_page()
+
+        # domcontentloaded es menos estricto que networkidle → no hace timeout
+        await page.goto(URL, wait_until="domcontentloaded", timeout=60000)
+
+        # Esperamos un poco a que cargue el JS del precio
+        await page.wait_for_timeout(5000)
 
         # Esperamos que aparezca el precio (Samsung usa este selector)
         try:
-            await page.wait_for_selector(".price-value, [class*='price']", timeout=15000)
+            await page.wait_for_selector(".price-value, [class*='price']", timeout=20000)
         except Exception:
             print("⚠️  Selector de precio no encontrado, intentando igual...")
 
@@ -50,6 +86,13 @@ async def get_price() -> float | None:
             if await element.count() > 0:
                 raw_price = await element.inner_text()
                 break
+
+        # Debug: si no encontramos precio, guardamos el HTML para inspeccionar
+        if not raw_price:
+            html = await page.content()
+            with open("debug_page.html", "w", encoding="utf-8") as f:
+                f.write(html)
+            print("⚠️  HTML guardado en debug_page.html para inspeccionar selectores")
 
         await browser.close()
 
