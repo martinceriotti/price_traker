@@ -4,7 +4,7 @@ on:
   schedule:
     # Corre todos los días a las 9:00 AM (hora Argentina = UTC-3, entonces 12:00 UTC)
     - cron: "0 12 * * *"
-  workflow_dispatch:   # permite correrlo manualmente desde GitHub
+  workflow_dispatch: # permite correrlo manualmente desde GitHub
 
 jobs:
   track-price:
@@ -27,9 +27,21 @@ jobs:
 
       - name: Correr el scraper
         env:
-          SPREADSHEET_ID:    ${{ secrets.SPREADSHEET_ID }}
+          SPREADSHEET_ID:     ${{ secrets.SPREADSHEET_ID }}
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
-          EMAIL_FROM:        ${{ secrets.EMAIL_FROM }}
-          EMAIL_PASSWORD:    ${{ secrets.EMAIL_PASSWORD }}
-          EMAIL_TO:          ${{ secrets.EMAIL_TO }}
+          EMAIL_FROM:         ${{ secrets.EMAIL_FROM }}
+          EMAIL_PASSWORD:     ${{ secrets.EMAIL_PASSWORD }}
+          EMAIL_TO:           ${{ secrets.EMAIL_TO }}
         run: python scraper.py
+
+      # Si falla, subir archivos de debug para poder inspeccionar
+      - name: Subir debug artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-files
+          path: |
+            debug_page.html
+            debug_screenshot.png
+          if-no-files-found: ignore
+          retention-days: 7
