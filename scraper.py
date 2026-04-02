@@ -25,19 +25,42 @@ EMAIL_TO = os.environ["EMAIL_TO"]
 
 
 def parse_price(raw: str) -> float | None:
-    """Limpia texto de precio argentino: '$1.299.999' → 1299999.0"""
+    """Limpia texto de precio argentino.
+    Maneja ambos formatos:
+      - Puntos como miles: $1.299.999 o $4.499.999
+      - Comas como miles:  $4,499,999.00 (formato API Samsung)
+    """
     if not raw:
         return None
-    cleaned = raw.replace("$", "").replace(".", "").replace(",", ".").strip()
-    # Eliminar todo lo que no sea dígito o punto
+
+    # Tomar solo la primera línea (evitar "$ 4,499,999.00\nComprar")
+    cleaned = raw.split("\n")[0].strip()
+    cleaned = cleaned.replace("$", "").strip()
+
+    if not cleaned or not any(c.isdigit() for c in cleaned):
+        return None
+
+    # Detectar formato: si tiene comas y punto decimal → formato inglés (4,499,999.00)
+    # Si tiene solo puntos → formato AR (4.499.999)
+    if "," in cleaned and "." in cleaned:
+        # Formato inglés: comas son miles, punto es decimal
+        cleaned = cleaned.replace(",", "")
+    elif "," in cleaned and "." not in cleaned:
+        # Solo comas → son separadores de miles (4,499,999)
+        cleaned = cleaned.replace(",", "")
+    else:
+        # Solo puntos o nada → formato AR: puntos son miles (4.499.999)
+        cleaned = cleaned.replace(".", "")
+
+    # Eliminar cualquier caracter no numérico restante (excepto punto decimal)
     cleaned = re.sub(r"[^\d.]", "", cleaned)
+
     try:
         val = float(cleaned)
-        # Sanity check: un TV Samsung debería costar entre 100.000 y 50.000.000 ARS
         if 100_000 <= val <= 50_000_000:
             return val
         print(f"⚠️  Precio fuera de rango esperado: {val}")
-        return val  # Lo devolvemos igual, pero avisamos
+        return None
     except ValueError:
         print(f"❌ No se pudo convertir '{raw}' a número.")
         return None
